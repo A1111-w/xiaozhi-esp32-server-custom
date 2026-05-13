@@ -159,6 +159,7 @@ class ConnectionHandler:
         self.last_activity_time = 0.0  # 统一的活动时间戳（毫秒）
         self.client_voice_stop = False
         self.last_is_voice = False
+        self.interrupt_voice_count = 0
 
         # asr相关变量
         # 因为实际部署时可能会用到公共的本地ASR，不能把变量暴露给公共ASR
@@ -1396,6 +1397,7 @@ class ConnectionHandler:
         self.client_voice_stop = False
         self.client_voice_window.clear()
         self.last_is_voice = False
+        self.interrupt_voice_count = 0
 
         # Clear ASR buffers
         self.asr_audio.clear()

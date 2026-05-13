@@ -21,6 +21,15 @@ def should_auto_interrupt_on_voice(conn: "ConnectionHandler") -> bool:
     return interrupt_cfg.get("auto_interrupt_on_voice", False)
 
 
+def get_interrupt_min_voice_packets(conn: "ConnectionHandler") -> int:
+    interrupt_cfg = conn.config.get("interrupt", {}) or {}
+    value = interrupt_cfg.get("min_voice_packets", 2)
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 2
+
+
 async def handleAudioMessage(conn: "ConnectionHandler", audio):
     # 当前片段是否有人说话
     have_voice = conn.vad.is_vad(conn, audio)
@@ -38,8 +47,21 @@ async def handleAudioMessage(conn: "ConnectionHandler", audio):
             and conn.client_listen_mode != "manual"
             and should_auto_interrupt_on_voice(conn)
         ):
-            await handleAbortMessage(conn)
+            conn.interrupt_voice_count += 1
+            if conn.interrupt_voice_count >= get_interrupt_min_voice_packets(conn):
+                conn.logger.bind(tag=TAG).info(
+                    f"??????????????: {conn.interrupt_voice_count}"
+                )
+                conn.interrupt_voice_count = 0
+                await handleAbortMessage(conn)
     # 设备长时间空闲检测，用于say goodbye
+    if not have_voice or not (
+        conn.client_is_speaking
+        and conn.client_listen_mode != "manual"
+        and should_auto_interrupt_on_voice(conn)
+    ):
+        conn.interrupt_voice_count = 0
+
     await no_voice_close_connect(conn, have_voice)
     # 接收音频
     await conn.asr.receive_audio(conn, audio, have_voice)

@@ -5,6 +5,11 @@
 
 #define TAG "AfeAudioProcessor"
 
+namespace {
+constexpr int kVadSpeechDebounceFrames = 3;
+constexpr int kVadSilenceDebounceFrames = 6;
+}
+
 AfeAudioProcessor::AfeAudioProcessor()
     : afe_data_(nullptr) {
     event_group_ = xEventGroupCreate();
@@ -107,11 +112,17 @@ void AfeAudioProcessor::Feed(std::vector<int16_t>&& data) {
 }
 
 void AfeAudioProcessor::Start() {
+    vad_speech_frames_ = 0;
+    vad_silence_frames_ = 0;
+    is_speaking_ = false;
     xEventGroupSetBits(event_group_, PROCESSOR_RUNNING);
 }
 
 void AfeAudioProcessor::Stop() {
     xEventGroupClearBits(event_group_, PROCESSOR_RUNNING);
+    vad_speech_frames_ = 0;
+    vad_silence_frames_ = 0;
+    is_speaking_ = false;
 
     std::lock_guard<std::mutex> lock(input_buffer_mutex_);
     if (afe_data_ != nullptr) {
@@ -154,12 +165,23 @@ void AfeAudioProcessor::AudioProcessorTask() {
 
         // VAD state change
         if (vad_state_change_callback_) {
-            if (res->vad_state == VAD_SPEECH && !is_speaking_) {
-                is_speaking_ = true;
-                vad_state_change_callback_(true);
-            } else if (res->vad_state == VAD_SILENCE && is_speaking_) {
-                is_speaking_ = false;
-                vad_state_change_callback_(false);
+            if (res->vad_state == VAD_SPEECH) {
+                vad_speech_frames_++;
+                vad_silence_frames_ = 0;
+                if (!is_speaking_ && vad_speech_frames_ >= kVadSpeechDebounceFrames) {
+                    is_speaking_ = true;
+                    vad_state_change_callback_(true);
+                }
+            } else if (res->vad_state == VAD_SILENCE) {
+                vad_silence_frames_++;
+                vad_speech_frames_ = 0;
+                if (is_speaking_ && vad_silence_frames_ >= kVadSilenceDebounceFrames) {
+                    is_speaking_ = false;
+                    vad_state_change_callback_(false);
+                }
+            } else {
+                vad_speech_frames_ = 0;
+                vad_silence_frames_ = 0;
             }
         }
 
@@ -189,13 +211,15 @@ void AfeAudioProcessor::AudioProcessorTask() {
 void AfeAudioProcessor::EnableDeviceAec(bool enable) {
     if (enable) {
 #if CONFIG_USE_DEVICE_AEC
-        afe_iface_->disable_vad(afe_data_);
         afe_iface_->enable_aec(afe_data_);
+        afe_iface_->enable_vad(afe_data_);
+        ESP_LOGI(TAG, "Device AEC enabled, keep VAD active for barge-in");
 #else
         ESP_LOGE(TAG, "Device AEC is not supported");
 #endif
     } else {
         afe_iface_->disable_aec(afe_data_);
         afe_iface_->enable_vad(afe_data_);
+        ESP_LOGI(TAG, "Device AEC disabled, VAD active");
     }
 }

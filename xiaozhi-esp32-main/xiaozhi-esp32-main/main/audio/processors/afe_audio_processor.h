@@ -38,6 +38,8 @@ private:
     AudioCodec* codec_ = nullptr;
     int frame_samples_ = 0;
     bool is_speaking_ = false;
+    int vad_speech_frames_ = 0;
+    int vad_silence_frames_ = 0;
     std::vector<int16_t> input_buffer_;
     std::mutex input_buffer_mutex_;
     std::vector<int16_t> output_buffer_;
