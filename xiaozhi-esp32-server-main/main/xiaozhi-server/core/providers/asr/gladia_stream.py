@@ -18,7 +18,7 @@ TAG = __name__
 logger = setup_logging()
 
 SHORT_UTTERANCE_LANGUAGE_FALLBACKS = {
-    "bn": ["bn", "en", "ar"],
+    "bn": ["bn", "ar"],
 }
 
 
